@@ -1,0 +1,149 @@
+// ==========================================
+// AI工具集 - 会员体系数据库设计
+// 使用 SQLite（MVP 阶段，后续可迁移到 PostgreSQL）
+// ==========================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// 注册/登录用户
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+
+  // 会员等级：FREE | PRO（SQLite 不支持 enum，用 String）
+  plan      String   @default("FREE")
+
+  // AI 生成次数（FREE 用户默认 30 次）
+  credits   Int      @default(30)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  orders    Order[]
+  diagrams  Diagram[]
+  favorites Favorite[]
+
+  // NextAuth 关联
+  accounts  Account[]
+  sessions  Session[]
+}
+
+// 生成历史（AI 生成的图表记录）
+model Diagram {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  type      String    // flow | er | uml | sequence | gantt | mindmap
+  prompt    String    // 用户输入的原始文本
+  result    String    // Mermaid 代码
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// 模板库
+model Template {
+  id          String @id @default(cuid())
+
+  title       String
+  category    String  // 电商系统 | 博客系统 | 学生管理 | 医院管理 | 库存管理
+  description String
+  preview     String  // SVG 预览或描述
+  code        String  // Mermaid 代码
+
+  createdAt   DateTime @default(now())
+}
+
+// 收藏
+model Favorite {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  diagramId String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, diagramId])
+}
+
+// 游客设备追踪（未登录用户，按设备 ID 限制导出次数）
+model GuestUsage {
+  id          String   @id @default(cuid())
+
+  deviceId    String   @unique
+
+  // 已导出次数（上限 3 次）
+  exportCount Int      @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// 订单记录
+model Order {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  amount    Float
+
+  // 订单类型：CREDITS | MONTHLY | YEARLY
+  type      String
+
+  // 订单状态：PENDING | PAID | FAILED
+  status    String   @default("PENDING")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========== NextAuth 所需模型 ==========
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
