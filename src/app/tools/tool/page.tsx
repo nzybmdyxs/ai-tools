@@ -4,10 +4,13 @@ import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import InputBox from "@/components/InputBox";
 import DiagramBox from "@/components/DiagramBox";
-import { TYPE_LABELS } from "@/lib/prompt";
+import { DiagramSkeleton } from "@/components/DiagramSkeleton";
+import { DIAGRAM_CONFIG } from "@/config/diagram-types";
+import type { DiagramType, ERNotation, GenerationMode } from "@/types/diagram";
 import { cleanMermaidCode } from "@/lib/mermaid";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
+import { getDeviceId } from "@/utils/device";
 
 function ToolContent() {
   const searchParams = useSearchParams();
@@ -18,7 +21,9 @@ function ToolContent() {
   const userId = (session?.user as { id?: string } | undefined)?.id || "";
 
   const [text, setText] = useState("");
-  const [type, setType] = useState("flow");
+  const [diagramType, setDiagramType] = useState<DiagramType>("flowchart");
+  const [erNotation, setERNotation] = useState<ERNotation>("crows-foot");
+  const [generationMode, setGenerationMode] = useState<GenerationMode>("ai");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -27,6 +32,14 @@ function ToolContent() {
   const [favorited, setFavorited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
+  const [fromTemplate, setFromTemplate] = useState(false);
+  const [repaired, setRepaired] = useState(false);
+  const [step, setStep] = useState("");
+
+  // Mermaid 预加载
+  useEffect(() => {
+    import("mermaid");
+  }, []);
 
   // 加载已有图表或模板
   useEffect(() => {
@@ -43,7 +56,7 @@ function ToolContent() {
       const data = await res.json();
       if (data.diagram) {
         setText(data.diagram.prompt || "");
-        setType(data.diagram.type);
+        setDiagramType(dbTypeToDiagramType(data.diagram.type));
         setResult(data.diagram.result);
         setRawCode(data.diagram.result);
         setSavedId(data.diagram.id);
@@ -63,12 +76,13 @@ function ToolContent() {
         setResult(template.code || "");
         setRawCode(template.code || "");
         // 根据模板内容推断类型
-        if (template.code?.startsWith("erDiagram")) setType("er");
-        else if (template.code?.startsWith("graph")) setType("flow");
-        else if (template.code?.startsWith("classDiagram")) setType("uml");
-        else if (template.code?.startsWith("sequenceDiagram")) setType("sequence");
-        else if (template.code?.startsWith("gantt")) setType("gantt");
-        else if (template.code?.startsWith("mindmap")) setType("mindmap");
+        if (template.code?.startsWith("erDiagram")) setDiagramType("er");
+        else if (template.code?.startsWith("graph")) setDiagramType("flowchart");
+        else if (template.code?.startsWith("classDiagram")) setDiagramType("class");
+        else if (template.code?.startsWith("sequenceDiagram")) setDiagramType("sequence");
+        else if (template.code?.startsWith("stateDiagram")) setDiagramType("state");
+        else if (template.code?.startsWith("gantt")) setDiagramType("gantt");
+        else if (template.code?.startsWith("mindmap")) setDiagramType("mindmap");
       }
     } catch {
       // 静默忽略
@@ -81,36 +95,82 @@ function ToolContent() {
     setLoading(true);
     setError("");
     setResult("");
+    setRawCode("");
     setSavedId(null);
     setFavorited(false);
+    setFromTemplate(false);
+    setRepaired(false);
+
+    // 步骤动画
+    const steps = ["正在分析需求...", "正在生成图表...", "正在校验语法..."];
+    let stepIdx = 0;
+    setStep(steps[0]);
+    const stepTimer = setInterval(() => {
+      stepIdx = (stepIdx + 1) % steps.length;
+      setStep(steps[stepIdx]);
+    }, 1200);
+
+    const deviceId = getDeviceId();
 
     try {
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), type, userId: userId || undefined }),
+        body: JSON.stringify({
+          text: text.trim(),
+          type: diagramType,
+          userId: userId || undefined,
+          deviceId: deviceId || undefined,
+          notation: diagramType === "er" ? erNotation : undefined,
+          generationMode,
+        }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (data.needUpgrade) {
-          throw new Error("AI 生成次数已用完，请购买次数包或升级 Pro 会员");
+      // 模板命中：直接 JSON 返回，不需要流式解析
+      if (res.headers.get("content-type")?.includes("application/json")) {
+        const data = await res.json();
+        if (!res.ok) {
+          if (data.needUpgrade) throw new Error("AI 生成次数已用完，请购买次数包或升级 Pro 会员");
+          if (data.needLogin) throw new Error("请先登录后使用 AI 生成功能");
+          throw new Error(data.error || "请求失败");
         }
-        if (data.needLogin) {
-          throw new Error("请先登录后使用 AI 生成功能");
-        }
-        throw new Error(data.error || "请求失败");
+        const cleaned = cleanMermaidCode(data.result);
+        setRawCode(data.result);
+        setResult(cleaned);
+        if (data.fromTemplate) setFromTemplate(true);
+        if (data.repaired) setRepaired(true);
       }
-
-      const cleaned = cleanMermaidCode(data.result);
-      setRawCode(data.result);
-      setResult(cleaned);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "生成失败，请稍后重试";
+      const message = err instanceof Error ? err.message : "生成失败，请稍后重试";
       setError(message);
       setResult("");
+    } finally {
+      clearInterval(stepTimer);
+      setLoading(false);
+      setStep("");
+    }
+  };
+
+  /** 手动修复 Mermaid 代码 */
+  const handleRepair = async () => {
+    const codeToFix = rawCode || result;
+    if (!codeToFix) return;
+
+    setLoading(true);
+    try {
+      const res = await fetch("/api/repair-mermaid", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: codeToFix }),
+      });
+      const data = await res.json();
+      if (data.code) {
+        setRawCode(data.code);
+        setResult(cleanMermaidCode(data.code));
+        setRepaired(true);
+      }
+    } catch {
+      // 静默失败
     } finally {
       setLoading(false);
     }
@@ -132,8 +192,8 @@ function ToolContent() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: title || `未命名${TYPE_LABELS[type]}`,
-          type,
+          title: title || `未命名${DIAGRAM_CONFIG[diagramType]?.label}`,
+          type: diagramTypeToDB(diagramType),
           prompt: text.trim(),
           result: rawCode || result,
         }),
@@ -204,10 +264,20 @@ function ToolContent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `结构图-${TYPE_LABELS[type]}-${Date.now()}.svg`;
+    a.download = `结构图-${DIAGRAM_CONFIG[diagramType]?.label || diagramType}-${Date.now()}.svg`;
     a.click();
     URL.revokeObjectURL(url);
   };
+
+  /** DiagramType → DB 存储值 */
+function diagramTypeToDB(t: DiagramType): string {
+  return t;
+}
+
+/** DB 存储值 → DiagramType */
+function dbTypeToDiagramType(t: string): DiagramType {
+  return (DIAGRAM_CONFIG[t as DiagramType] ? t : "flowchart") as DiagramType;
+}
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
@@ -231,7 +301,7 @@ function ToolContent() {
         </h1>
         <p className="text-gray-500 mt-2 text-lg">
           输入文字描述，AI 自动生成专业的 Mermaid 结构图 — 支持{" "}
-          {Object.keys(TYPE_LABELS).length} 种图表类型
+          {Object.keys(DIAGRAM_CONFIG).length} 种图表类型
         </p>
       </div>
 
@@ -242,13 +312,17 @@ function ToolContent() {
         </h2>
         <InputBox
           text={text}
-          type={type}
+          diagramType={diagramType}
+          erNotation={erNotation}
+          generationMode={generationMode}
           loading={loading}
           onTextChange={(t) => {
             setText(t);
             setError("");
           }}
-          onTypeChange={setType}
+          onDiagramTypeChange={setDiagramType}
+          onERNotationChange={setERNotation}
+          onGenerationModeChange={setGenerationMode}
           onGenerate={generate}
         />
       </section>
@@ -289,52 +363,77 @@ function ToolContent() {
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-700">
             📈 生成结果
-            {result && (
+            {loading && (
+              <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
+                生成中
+              </span>
+            )}
+            {fromTemplate && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
+                ⚡ 模板匹配
+              </span>
+            )}
+            {repaired && (
+              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
+                🔧 已自动修复
+              </span>
+            )}
+            {result && !loading && (
               <span className="ml-2 text-sm font-normal text-gray-400">
-                - {TYPE_LABELS[type]}
+                - {DIAGRAM_CONFIG[diagramType]?.label}
               </span>
             )}
           </h2>
-          {result && (
-            <div className="flex gap-2">
-              <button
-                id="copy-btn"
-                onClick={copyCode}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-              >
-                📋 复制代码
-              </button>
-              <button
-                onClick={downloadSVG}
-                className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-              >
-                📥 下载 SVG
-              </button>
-              {userId && (
-                <>
+          <div className="flex gap-2">
+            {result && (
+              <>
+                <button
+                  id="copy-btn"
+                  onClick={copyCode}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                >
+                  📋 复制代码
+                </button>
+                <button
+                  onClick={downloadSVG}
+                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
+                >
+                  📥 下载 SVG
+                </button>
+                <button
+                  onClick={handleRepair}
+                  disabled={loading}
+                  className="px-3 py-1.5 text-xs font-medium text-yellow-600 bg-yellow-50 rounded-md hover:bg-yellow-100 disabled:opacity-50 transition-colors"
+                >
+                  🔧 修复
+                </button>
+              </>
+            )}
+            {userId && result && (
+              <>
+                <button
+                  onClick={saveToHistory}
+                  disabled={saving}
+                  className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                >
+                  {saving ? "保存中..." : savedId ? "✅ 已保存" : "💾 保存"}
+                </button>
+                {savedId && (
                   <button
-                    onClick={saveToHistory}
-                    disabled={saving}
-                    className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors"
+                    onClick={toggleFavorite}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                      favorited
+                        ? "text-yellow-600 bg-yellow-50 hover:bg-yellow-100"
+                        : "text-gray-600 bg-gray-100 hover:bg-gray-200"
+                    }`}
                   >
-                    {saving ? "保存中..." : savedId ? "✅ 已保存" : "💾 保存"}
+                    {favorited ? "⭐ 已收藏" : "☆ 收藏"}
                   </button>
-                  {savedId && (
-                    <button
-                      onClick={toggleFavorite}
-                      className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                        favorited
-                          ? "text-yellow-600 bg-yellow-50 hover:bg-yellow-100"
-                          : "text-gray-600 bg-gray-100 hover:bg-gray-200"
-                      }`}
-                    >
-                      {favorited ? "⭐ 已收藏" : "☆ 收藏"}
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
-          )}
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* 保存状态提示 */}
@@ -351,7 +450,11 @@ function ToolContent() {
         )}
 
         <div className="diagram-container">
-          <DiagramBox code={result} />
+          {loading && !result ? (
+            <DiagramSkeleton step={step} />
+          ) : (
+            <DiagramBox code={result} />
+          )}
         </div>
 
         {rawCode && (

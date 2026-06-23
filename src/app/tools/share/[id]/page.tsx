@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { ShareDiagramView } from "./ShareDiagramView";
+import { DIAGRAM_CONFIG } from "@/config/diagram-types";
 
 export async function generateMetadata({
   params,
@@ -23,10 +24,9 @@ export async function generateMetadata({
     return { title: "图表未找到" };
   }
 
-  const typeLabels: Record<string, string> = {
-    flow: "流程图", er: "ER 图", uml: "UML 类图",
-    sequence: "时序图", gantt: "甘特图", mindmap: "思维导图",
-  };
+  const typeLabels: Record<string, string> = Object.fromEntries(
+    Object.values(DIAGRAM_CONFIG).map((c) => [c.value, c.label])
+  );
 
   return {
     title: `${diagram.title} — 分享的${typeLabels[diagram.type] || "图表"}`,
@@ -61,10 +61,9 @@ export default async function SharePage({
     );
   }
 
-  const typeLabels: Record<string, string> = {
-    flow: "流程图", er: "ER 图", uml: "UML 类图",
-    sequence: "时序图", gantt: "甘特图", mindmap: "思维导图",
-  };
+  const typeLabels: Record<string, string> = Object.fromEntries(
+    Object.values(DIAGRAM_CONFIG).map((c) => [c.value, c.label])
+  );
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">

@@ -9,17 +9,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { isDevBypass } from "@/lib/auth/admin";
+import { getDevUser } from "@/lib/auth/dev-user";
+
+/** 获取当前有效用户邮箱（处理开发绕过） */
+async function getAuthEmail(): Promise<string | null> {
+  if (isDevBypass()) return getDevUser().email;
+  const session = await getServerSession(authOptions);
+  return session?.user?.email ?? null;
+}
 
 /** 获取用户收藏列表 */
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const email = await getAuthEmail();
+    if (!email) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
       select: { id: true },
     });
 
@@ -48,13 +57,13 @@ export async function GET() {
 /** 添加收藏 */
 export async function POST(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const email = await getAuthEmail();
+    if (!email) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
       select: { id: true },
     });
 
@@ -108,13 +117,13 @@ export async function POST(req: NextRequest) {
 /** 取消收藏 */
 export async function DELETE(req: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
+    const email = await getAuthEmail();
+    if (!email) {
       return NextResponse.json({ error: "请先登录" }, { status: 401 });
     }
 
     const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+      where: { email },
       select: { id: true },
     });
 

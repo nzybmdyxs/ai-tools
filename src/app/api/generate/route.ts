@@ -1,175 +1,147 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest } from "next/server";
 import OpenAI from "openai";
-import { PROMPT_MAP } from "@/lib/prompt";
+import { matchTemplate } from "@/lib/prompt";
+import { buildPrompt } from "@/config/build-prompt";
+import { sqlToMermaid } from "@/lib/sql/sql-to-mermaid";
+import { fixAndValidate } from "@/lib/mermaid/fix-and-validate";
+import type { DiagramType, ERNotation, GenerationMode } from "@/types/diagram";
 import { prisma } from "@/lib/prisma";
+import { hasUnlimitedAccess } from "@/lib/auth/admin";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 /**
- * AI 结构图生成 API
+ * AI 结构图生成 API — V3（三模式 + 自动校验修复）
  * POST /api/generate
  *
- * Body: {
- *   text: string,
- *   type: "flow" | "er" | "uml" | "sequence" | "gantt" | "mindmap",
- *   userId?: string   // 登录用户 ID（可选，游客不传）
- * }
- *
- * 权限控制：
- *   - Pro 会员：无限生成
- *   - FREE 用户：消耗 credits（默认 30 次）
- *   - 游客：不可使用（需要注册）
+ * 生成模式：
+ *   - ai: AI 生成 → 模板匹配 → 校验 → 修复（最多3次）
+ *   - sql: SQL DDL → Mermaid ER 图转换
+ *   - mermaid: 直接返回用户手写 Mermaid 代码（校验 + 修复）
  */
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, type, userId, deviceId } = await req.json();
+    const { text, type: rawType, userId, deviceId, notation, generationMode: mode } = await req.json();
+    const diagramType: DiagramType = rawType || "flowchart";
+    const erNotation: ERNotation = notation || "crows-foot";
+    const generationMode: GenerationMode = mode || "ai";
 
     // ===== 参数校验 =====
     if (!text || typeof text !== "string" || text.trim().length === 0) {
-      return NextResponse.json(
-        { error: "请输入要转换的内容" },
-        { status: 400 }
-      );
+      return new Response(JSON.stringify({ error: "请输入内容" }), { status: 400 });
     }
 
-    const validTypes = Object.keys(PROMPT_MAP);
-    if (!type || !validTypes.includes(type)) {
-      return NextResponse.json(
-        { error: `无效的图表类型，支持的类型：${validTypes.join(", ")}` },
-        { status: 400 }
-      );
-    }
-
-    // ===== 用户权限校验 =====
-    let creditsRemain: number | null = null;
-    let guestCreditsRemain: number | null = null;
-
-    if (userId) {
-      // ===== 登录用户 =====
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { id: true, plan: true, credits: true },
-      });
-
-      if (!user) {
-        return NextResponse.json({ error: "用户不存在" }, { status: 404 });
-      }
-
-      if (user.plan === "PRO") {
-        // Pro 会员：无限使用
-        creditsRemain = -1;
-      } else {
-        // FREE 用户：检查剩余次数
-        if (user.credits <= 0) {
-          return NextResponse.json({
-            error: "AI 生成次数已用完",
-            needUpgrade: true,
-            message: "请购买次数包或升级 Pro 会员",
-          });
+    // ===== 权限校验 =====
+    const session = await getServerSession(authOptions);
+    const isAdmin = hasUnlimitedAccess(session);
+    if (!isAdmin) {
+      if (userId) {
+        const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, plan: true, credits: true } });
+        if (!user) return new Response(JSON.stringify({ error: "用户不存在" }), { status: 404 });
+        if (user.plan !== "PRO" && user.credits <= 0) {
+          return new Response(JSON.stringify({ error: "次数已用完", needUpgrade: true }), { status: 402 });
         }
-        await prisma.user.update({
-          where: { id: user.id },
-          data: { credits: { decrement: 1 } },
-        });
-        creditsRemain = Math.max(0, user.credits - 1);
+        if (user.plan !== "PRO") {
+          await prisma.user.update({ where: { id: user.id }, data: { credits: { decrement: 1 } } });
+        }
+      } else if (deviceId && typeof deviceId === "string") {
+        let guest = await prisma.guestUsage.findUnique({ where: { deviceId } });
+        if (!guest) guest = await prisma.guestUsage.create({ data: { deviceId, exportCount: 0, aiCount: 0 } });
+        if (guest.aiCount >= 3) return new Response(JSON.stringify({ error: "免费次数已用完", needLogin: true }), { status: 401 });
+        await prisma.guestUsage.update({ where: { deviceId }, data: { aiCount: { increment: 1 } } });
+      } else {
+        return new Response(JSON.stringify({ error: "请先登录", needLogin: true }), { status: 401 });
       }
-    } else {
-      // ===== 游客：按 deviceId 追踪（3次免费） =====
-      if (!deviceId || typeof deviceId !== "string") {
-        return NextResponse.json(
-          { error: "请先登录后使用 AI 生成功能", needLogin: true },
-          { status: 401 }
-        );
-      }
-
-      let guest = await prisma.guestUsage.findUnique({
-        where: { deviceId },
-      });
-
-      if (!guest) {
-        guest = await prisma.guestUsage.create({
-          data: { deviceId, exportCount: 0, aiCount: 0 },
-        });
-      }
-
-      const GUEST_AI_LIMIT = 3;
-      if (guest.aiCount >= GUEST_AI_LIMIT) {
-        return NextResponse.json({
-          error: "免费次数已用完，请注册后继续使用",
-          needLogin: true,
-          guestUsedUp: true,
-          message: `游客可免费生成 ${GUEST_AI_LIMIT} 次，注册即送 30 次`,
-        });
-      }
-
-      await prisma.guestUsage.update({
-        where: { deviceId },
-        data: { aiCount: { increment: 1 } },
-      });
-
-      guestCreditsRemain = GUEST_AI_LIMIT - guest.aiCount - 1;
     }
 
-    // ===== 调用 AI 生成 =====
-    const apiKey = process.env.OPENAI_API_KEY;
-    const apiBase = process.env.OPENAI_API_BASE;
-    const modelName =
-      process.env.AI_MODEL || process.env.OPENAI_MODEL || "deepseek-v4-pro";
+    // ===== 按模式生成 Mermaid 代码 =====
+    let mermaidCode: string;
+    let fromTemplate = false;
+    let repaired = false;
 
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "未配置 AI API Key，请在 .env.local 中设置 OPENAI_API_KEY" },
-        { status: 500 }
-      );
+    switch (generationMode) {
+      case "sql": {
+        // SQL → Mermaid 直接转换（不需 AI）
+        const result = sqlToMermaid(text.trim());
+        mermaidCode = result.code;
+        break;
+      }
+
+      case "mermaid": {
+        // 直接使用用户输入的 Mermaid 代码
+        mermaidCode = text.trim();
+        // 清理 markdown 包裹
+        mermaidCode = mermaidCode
+          .replace(/```mermaid\n?/gi, "")
+          .replace(/```\n?/g, "")
+          .trim();
+        // 仍然执行校验+修复
+        break;
+      }
+
+      case "ai":
+      default: {
+        // AI 模式：先尝试模板匹配
+        const templateCode = matchTemplate(diagramType, text.trim());
+        if (templateCode) {
+          mermaidCode = templateCode;
+          fromTemplate = true;
+        } else {
+          // 调用 AI 生成
+          const userPrompt = buildPrompt({ diagramType, notation: erNotation, prompt: text.trim() });
+          mermaidCode = await callAI(userPrompt);
+        }
+        break;
+      }
     }
 
-    const client = new OpenAI({
-      apiKey,
-      baseURL: apiBase || undefined,
-    });
-
-    const systemPrompt = PROMPT_MAP[type];
-
-    const res = await client.chat.completions.create({
-      model: modelName,
-      messages: [
-        {
-          role: "system",
-          content:
-            "你是一个专业的技术图表生成助手。只输出 Mermaid 代码，不要加任何解释、说明或 markdown 代码块标记。",
-        },
-        {
-          role: "user",
-          content: `${systemPrompt}\n\n内容：\n${text.trim()}`,
-        },
-      ],
-      temperature: 0.3,
-      max_tokens: 4096,
-    });
-
-    const result = res.choices[0]?.message?.content || "";
-
-    const response: Record<string, unknown> = { result };
-    if (userId) {
-      response.creditsRemain = creditsRemain;
-      response.plan = creditsRemain === -1 ? "PRO" : "FREE";
-    }
-    if (guestCreditsRemain !== null) {
-      response.guestCreditsRemain = guestCreditsRemain;
+    // ===== 自动校验 + 修复（所有模式） =====
+    if (!fromTemplate) {
+      const fixResult = await fixAndValidate(mermaidCode);
+      mermaidCode = fixResult.code;
+      repaired = fixResult.repaired;
     }
 
-    return NextResponse.json(response);
+    return new Response(
+      JSON.stringify({ result: mermaidCode, fromTemplate, repaired }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
   } catch (error: unknown) {
-    console.error("AI 生成失败:", error);
-
+    console.error("生成失败:", error);
     if (error instanceof OpenAI.APIError) {
-      return NextResponse.json(
-        { error: `AI 服务错误：${error.message}` },
-        { status: error.status || 500 }
-      );
+      return new Response(JSON.stringify({ error: "AI 服务错误" }), { status: error.status || 500 });
     }
-
-    const errMsg =
-      error instanceof Error ? error.message : "未知错误，请稍后重试";
-    return NextResponse.json({ error: `生成失败：${errMsg}` }, { status: 500 });
+    return new Response(JSON.stringify({ error: "生成失败，请稍后重试" }), { status: 500 });
   }
+}
+
+/** 调用 AI 生成（非流式，因为后面要校验修复） */
+async function callAI(prompt: string): Promise<string> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const apiBase = process.env.OPENAI_API_BASE;
+  const modelName = process.env.AI_MODEL || "deepseek-v4-flash";
+
+  if (!apiKey) throw new Error("未配置 AI API Key");
+
+  const client = new OpenAI({ apiKey, baseURL: apiBase || undefined });
+  const res = await client.chat.completions.create({
+    model: modelName,
+    messages: [
+      {
+        role: "system",
+        content:
+          "Mermaid代码专家。必须输出合法Mermaid语法。只输出代码，禁止markdown代码块、解释、注释。代码必须能通过 mermaid.parse() 校验。",
+      },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.1,
+    max_tokens: 2048,
+  });
+
+  const result = res.choices[0]?.message?.content || "";
+  return result
+    .replace(/```mermaid\n?/gi, "")
+    .replace(/```\n?/g, "")
+    .trim();
 }

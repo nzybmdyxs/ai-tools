@@ -12,7 +12,7 @@ import { useSession } from "next-auth/react";
 import MonacoEditor from "@/components/MonacoEditor";
 import DiagramBox from "@/components/DiagramBox";
 import { cleanMermaidCode } from "@/lib/mermaid";
-import { TYPE_LABELS } from "@/lib/prompt";
+import { DIAGRAM_TYPES } from "@/config/diagram-types";
 import Link from "next/link";
 
 function EditorContent() {
@@ -113,8 +113,8 @@ function EditorContent() {
             onChange={(e) => setType(e.target.value)}
             className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 text-gray-600"
           >
-            {Object.entries(TYPE_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
+            {DIAGRAM_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>
 
@@ -158,7 +158,7 @@ function EditorContent() {
         <div className="flex-1 p-4 bg-white overflow-auto">
           <div className="mb-2 text-xs text-gray-400 flex items-center justify-between">
             <span>实时预览</span>
-            <span className="text-gray-300">{TYPE_LABELS[type]}</span>
+            <span className="text-gray-300">{DIAGRAM_TYPES.find(t => t.value === type)?.label}</span>
           </div>
           <div className="diagram-container">
             <DiagramBox code={cleanMermaidCode(debouncedCode)} />

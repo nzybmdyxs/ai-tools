@@ -7,9 +7,23 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { GUEST_EXPORT_LIMIT } from "@/lib/plans";
+import { hasUnlimitedAccess } from "@/lib/auth/admin";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
   try {
+    // ===== 超级管理员 / 开发绕过：无限导出 =====
+    const session = await getServerSession(authOptions);
+    if (hasUnlimitedAccess(session)) {
+      return NextResponse.json({
+        success: true,
+        userType: "admin" as const,
+        unlimited: true,
+        message: "超级管理员，无限导出",
+      });
+    }
+
     const body = await req.json();
     const { deviceId, userId } = body;
 

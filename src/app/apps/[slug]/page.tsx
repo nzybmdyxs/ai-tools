@@ -5,6 +5,7 @@ import Link from "next/link";
 import InputBox from "@/components/InputBox";
 import DiagramBox from "@/components/DiagramBox";
 import { cleanMermaidCode } from "@/lib/mermaid";
+import type { DiagramType, ERNotation, GenerationMode } from "@/types/diagram";
 
 /**
  * 工具配置表 — JSON 驱动，新增工具只需添加配置
@@ -96,7 +97,11 @@ export default function ToolDetailPage({
   const config = TOOL_CONFIG[slug];
 
   const [text, setText] = useState("");
-  const [type, setType] = useState(config?.defaultType || "flow");
+  const [diagramType, setDiagramType] = useState<DiagramType>(
+    (config?.defaultType as DiagramType) || "flowchart"
+  );
+  const [erNotation, setERNotation] = useState<ERNotation>("crows-foot");
+  const [generationMode, setGenerationMode] = useState<GenerationMode>("ai");
   const [result, setResult] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -134,7 +139,7 @@ export default function ToolDetailPage({
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: text.trim(), type }),
+        body: JSON.stringify({ text: text.trim(), type: diagramType, generationMode }),
       });
 
       const data = await res.json();
@@ -208,13 +213,17 @@ export default function ToolDetailPage({
         </h2>
         <InputBox
           text={text}
-          type={type}
+          diagramType={diagramType}
+          erNotation={erNotation}
+          generationMode={generationMode}
           loading={loading}
           onTextChange={(t) => {
             setText(t);
             setError("");
           }}
-          onTypeChange={config.showTypeSelector ? setType : () => {}}
+          onDiagramTypeChange={setDiagramType}
+          onERNotationChange={setERNotation}
+          onGenerationModeChange={setGenerationMode}
           onGenerate={generate}
         />
       </section>

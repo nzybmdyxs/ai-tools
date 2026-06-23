@@ -9,17 +9,13 @@ import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { FavoriteList } from "./FavoriteList";
+import { DIAGRAM_CONFIG } from "@/config/diagram-types";
 
 export const dynamic = "force-dynamic";
 
-const typeLabels: Record<string, string> = {
-  flow: "流程图",
-  er: "ER 图",
-  uml: "UML 类图",
-  sequence: "时序图",
-  gantt: "甘特图",
-  mindmap: "思维导图",
-};
+const typeLabels: Record<string, string> = Object.fromEntries(
+  Object.values(DIAGRAM_CONFIG).map((c) => [c.value, c.label])
+);
 
 export default async function FavoritesPage() {
   const session = await getServerSession(authOptions);

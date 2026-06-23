@@ -77,6 +77,10 @@ model Diagram {
   prompt    String    // 用户输入的原始文本
   result    String    // Mermaid 代码
 
+  // V1.2: Mermaid 渲染追踪
+  renderError String?  // 上次渲染错误信息
+  repaired    Boolean  @default(false)  // 是否经过自动修复
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

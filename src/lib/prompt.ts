@@ -1,81 +1,135 @@
 /**
- * AI 提示词模板
- * 根据不同图表类型返回对应的 Mermaid 生成提示词
+ * AI 提示词 — V3 精简版
+ *
+ * 优化策略：
+ *   1. Prompt 极短，让模型直奔主题
+ *   2. 模板优先匹配（0.1秒返回，跳过AI）
+ *   3. 配合 max_tokens=2048 限制输出长度
  */
 
-export const PROMPT_MAP: Record<string, string> = {
-  flow: `你是一个专业的流程图生成助手。请把以下内容转换为 Mermaid flowchart 格式。
+// ===== 模板关键词匹配（跳过 AI，直接返回预设代码） =====
 
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 使用 flowchart TD（从上到下）或 flowchart LR（从左到右）
-3. 节点使用方括号[]表示流程步骤，菱形{}表示判断
-4. 使用中文描述节点
+interface TemplateMatch {
+  keywords: string[];
+  code: string;
+}
 
-请将以下内容转换为流程图：`,
-
-  er: `你是一个专业的数据库设计助手。请把以下内容转换为 Mermaid ER 图（erDiagram）格式。
-
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 识别实体及其属性
-3. 标注实体之间的关系（一对一、一对多、多对多）
-4. 使用中文描述
-
-请将以下内容转换为 ER 图：`,
-
-  uml: `你是一个专业的 UML 建模助手。请把以下内容转换为 Mermaid classDiagram 格式。
-
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 包含类名、属性和方法
-3. 标注类之间的关系（继承、关联、聚合、组合）
-4. 使用中文描述
-
-请将以下内容转换为 UML 类图：`,
-
-  sequence: `你是一个专业的时序图生成助手。请把以下内容转换为 Mermaid sequenceDiagram 格式。
-
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 清晰标注参与者和消息传递顺序
-3. 使用中文描述
-
-请将以下内容转换为时序图：`,
-
-  gantt: `你是一个专业的甘特图生成助手。请把以下内容转换为 Mermaid gantt 格式。
-
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 包含任务、时间线和依赖关系
-3. 使用中文描述
-
-请将以下内容转换为甘特图：`,
-
-  mindmap: `你是一个专业的思维导图生成助手。请把以下内容转换为 Mermaid mindmap 格式。
-
-要求：
-1. 只输出 Mermaid 代码，不要任何解释
-2. 层级清晰，结构合理
-3. 使用中文描述
-
-请将以下内容转换为思维导图：`,
+export const TEMPLATE_MATCHES: Record<string, TemplateMatch[]> = {
+  er: [
+    {
+      keywords: ["学生", "课程", "成绩", "教务", "选课"],
+      code: `erDiagram
+  STUDENT { string id PK; string name; string email; date birth }
+  COURSE { string id PK; string name; int credits; string teacherId FK }
+  ENROLLMENT { string id PK; string studentId FK; string courseId FK; float score }
+  TEACHER { string id PK; string name; string department }
+  STUDENT ||--o{ ENROLLMENT : selects
+  COURSE ||--o{ ENROLLMENT : has
+  TEACHER ||--o{ COURSE : teaches`,
+    },
+    {
+      keywords: ["电商", "商城", "商品", "订单", "购物车"],
+      code: `erDiagram
+  USER { string id PK; string username; string email }
+  PRODUCT { string id PK; string name; float price; int stock }
+  ORDER { string id PK; string userId FK; float total; string status }
+  ORDER_ITEM { string id PK; string orderId FK; string productId FK; int qty }
+  USER ||--o{ ORDER : places
+  ORDER ||--o{ ORDER_ITEM : contains
+  PRODUCT ||--o{ ORDER_ITEM : includes`,
+    },
+    {
+      keywords: ["博客", "文章", "评论", "CMS", "分类", "标签"],
+      code: `erDiagram
+  USER { string id PK; string username; string avatar }
+  POST { string id PK; string userId FK; string title; string content }
+  CATEGORY { string id PK; string name; string slug }
+  COMMENT { string id PK; string postId FK; string userId FK; string content }
+  TAG { string id PK; string name }
+  POST_TAG { string postId FK; string tagId FK }
+  USER ||--o{ POST : writes
+  POST ||--o{ COMMENT : has
+  CATEGORY ||--o{ POST : groups
+  POST ||--o{ POST_TAG : tagged
+  TAG ||--o{ POST_TAG : used`,
+    },
+    {
+      keywords: ["医院", "挂号", "医生", "患者", "预约", "门诊"],
+      code: `erDiagram
+  PATIENT { string id PK; string name; string phone }
+  DEPARTMENT { string id PK; string name }
+  DOCTOR { string id PK; string name; string deptId FK; string title }
+  APPOINTMENT { string id PK; string patientId FK; string doctorId FK; datetime time }
+  PATIENT ||--o{ APPOINTMENT : books
+  DOCTOR ||--o{ APPOINTMENT : accepts
+  DEPARTMENT ||--o{ DOCTOR : has`,
+    },
+    {
+      keywords: ["库存", "仓库", "入库", "出库", "盘点", "供应链"],
+      code: `erDiagram
+  WAREHOUSE { string id PK; string name; string location }
+  PRODUCT { string id PK; string name; string sku }
+  INVENTORY { string id PK; string warehouseId FK; string productId FK; int qty }
+  SUPPLIER { string id PK; string name; string contact }
+  INBOUND { string id PK; string productId FK; string supplierId FK; int qty }
+  WAREHOUSE ||--o{ INVENTORY : stores
+  PRODUCT ||--o{ INVENTORY : tracked
+  SUPPLIER ||--o{ INBOUND : supplies`,
+    },
+    {
+      keywords: ["HR", "人力资源", "员工", "部门", "考勤", "薪资"],
+      code: `erDiagram
+  DEPARTMENT { string id PK; string name }
+  EMPLOYEE { string id PK; string name; string deptId FK; string position }
+  ATTENDANCE { string id PK; string empId FK; date checkDate; string status }
+  SALARY { string id PK; string empId FK; float amount; string period }
+  DEPARTMENT ||--o{ EMPLOYEE : staffs
+  EMPLOYEE ||--o{ ATTENDANCE : clocks
+  EMPLOYEE ||--o{ SALARY : paid`,
+    },
+  ],
+  flowchart: [
+    {
+      keywords: ["登录", "注册", "验证"],
+      code: `graph TD
+  A[用户访问] --> B{是否已注册?}
+  B -->|否| C[注册页面]
+  B -->|是| D[登录页面]
+  C --> E[填写信息]
+  E --> F[验证邮箱]
+  F --> G[注册成功]
+  D --> H[输入账号密码]
+  H --> I{验证通过?}
+  I -->|是| J[进入系统]
+  I -->|否| H`,
+    },
+    {
+      keywords: ["下单", "购买", "支付", "购物"],
+      code: `graph TD
+  A[浏览商品] --> B[加入购物车]
+  B --> C[确认订单]
+  C --> D{库存充足?}
+  D -->|是| E[选择支付方式]
+  D -->|否| F[提示缺货]
+  E --> G[支付处理]
+  G --> H{支付成功?}
+  H -->|是| I[生成订单]
+  H -->|否| J[支付失败]`,
+    },
+  ],
 };
 
-export const TYPE_LABELS: Record<string, string> = {
-  flow: "流程图",
-  er: "ER 图",
-  uml: "UML 类图",
-  sequence: "时序图",
-  gantt: "甘特图",
-  mindmap: "思维导图",
-};
+/** 匹配模板关键词，命中则直接返回代码（跳过 AI） */
+export function matchTemplate(type: string, text: string): string | null {
+  const matches = TEMPLATE_MATCHES[type];
+  if (!matches) return null;
 
-export const TYPE_EXAMPLES: Record<string, string> = {
-  flow: "用户注册 → 验证邮箱 → 填写资料 → 注册成功",
-  er: "用户（id, 用户名, 邮箱） 订单（id, 用户id, 金额, 时间） 一个用户有多个订单",
-  uml: "Animal 类有 name 属性和 eat 方法，Dog 继承 Animal，有 bark 方法",
-  sequence: "用户发送登录请求 → 服务器验证 → 数据库查询 → 返回结果 → 用户登录成功",
-  gantt: "需求分析 7天 → UI设计 5天 → 开发 14天 → 测试 5天 → 上线 1天",
-  mindmap: "AI工具：ChatGPT，Claude，文心一言，通义千问",
-};
+  const lower = text.toLowerCase();
+  for (const tmpl of matches) {
+    const matched = tmpl.keywords.filter((kw) => lower.includes(kw));
+    if (matched.length >= Math.ceil(tmpl.keywords.length * 0.6)) {
+      return tmpl.code;
+    }
+  }
+  return null;
+}

@@ -8,16 +8,18 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { hasUnlimitedAccess } from "@/lib/auth/admin";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
+  const isAdmin = hasUnlimitedAccess(session);
 
-  if (!session?.user?.email) {
+  if (!session?.user?.email && !isAdmin) {
     redirect("/auth/signin");
   }
 
   const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+    where: { email: session?.user?.email || process.env.SUPER_ADMIN_EMAIL || "" },
     select: {
       id: true,
       plan: true,
@@ -40,13 +42,13 @@ export default async function DashboardPage() {
   const stats = [
     {
       label: "当前套餐",
-      value: user.plan === "PRO" ? "Pro 会员" : "免费版",
+      value: isAdmin ? "🔧 超级管理员" : user.plan === "PRO" ? "Pro 会员" : "免费版",
       icon: "💎",
-      color: user.plan === "PRO" ? "bg-purple-50 text-purple-700" : "bg-gray-50 text-gray-700",
+      color: isAdmin ? "bg-green-50 text-green-700" : user.plan === "PRO" ? "bg-purple-50 text-purple-700" : "bg-gray-50 text-gray-700",
     },
     {
       label: "剩余 AI 次数",
-      value: user.plan === "PRO" ? "无限" : `${user.credits}`,
+      value: isAdmin || user.plan === "PRO" ? "无限" : `${user.credits}`,
       icon: "🎯",
       color: "bg-blue-50 text-blue-700",
     },
@@ -72,7 +74,14 @@ export default async function DashboardPage() {
 
   return (
     <div className="max-w-4xl">
-      <h1 className="text-3xl font-bold text-gray-800 mb-8">👋 用户中心</h1>
+      <div className="flex items-center gap-3 mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">👋 用户中心</h1>
+        {isAdmin && (
+          <span className="px-3 py-1 bg-green-500 text-white text-sm font-medium rounded-full">
+            ⚡ 超级管理员
+          </span>
+        )}
+      </div>
 
       {/* 统计卡片 */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
