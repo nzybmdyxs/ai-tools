@@ -65,13 +65,35 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // 动态博客路由
-  const blogSlugs = ["er-diagram-guide", "uml-guide"];
+  // 动态博客路由（20篇）
+  const blogSlugs = [
+    "er-diagram-guide", "database-design-patterns", "sql-query-optimization",
+    "uml-guide", "system-architecture-patterns", "rest-api-design",
+    "flowchart-guide", "sequence-diagram-guide", "gantt-chart-guide",
+    "essay-writing-guide", "literature-review-guide", "graduation-project-guide",
+    "git-workflow-guide", "docker-basics",
+    "ecommerce-db-design", "inventory-system-design",
+    "hospital-information-system", "cms-database-design",
+    "mindmap-guide", "json-formatting-guide",
+  ];
   const blogRoutes: MetadataRoute.Sitemap = blogSlugs.map((slug) => ({
     url: `${BASE_URL}/blog/${slug}`,
     lastModified: new Date(),
     changeFrequency: "monthly" as const,
     priority: 0.7,
+  }));
+
+  // 博客分类路由
+  const categorySlugs = [
+    "shu-ju-ku", "xi-tong-she-ji", "xue-shu-xie-zuo", "kai-fa-gong-ju",
+    "dian-shang-xi-tong", "ku-cun-guan-li", "yi-yuan-guan-li", "bo-ke-xi-tong",
+    "xiao-lu-gong-ju", "xiang-mu-guan-li", "xue-xi-fang-fa",
+  ];
+  const categoryRoutes: MetadataRoute.Sitemap = categorySlugs.map((slug) => ({
+    url: `${BASE_URL}/blog/category/${slug}`,
+    lastModified: new Date(),
+    changeFrequency: "weekly" as const,
+    priority: 0.6,
   }));
 
   // 动态工具路由
@@ -92,5 +114,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.65,
   }));
 
-  return [...staticRoutes, ...blogRoutes, ...appsRoutes];
+  return [...staticRoutes, ...blogRoutes, ...categoryRoutes, ...appsRoutes];
 }

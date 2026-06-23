@@ -6,6 +6,7 @@
 import Link from "next/link";
 import { pricing, formatPrice } from "@/lib/pricing";
 import type { Metadata } from "next";
+import BuyButton from "@/components/BuyButton";
 
 export const metadata: Metadata = {
   title: "升级会员",
@@ -112,12 +113,16 @@ export default function PricingPage() {
             </li>
           </ul>
 
-          <Link
-            href="/auth/signin"
-            className="block text-center py-3 rounded-xl bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors"
-          >
-            立即购买
-          </Link>
+          <div className="flex flex-col gap-2">
+            {pricing.credits.map((pkg) => (
+              <BuyButton
+                key={pkg.id}
+                productId={pkg.id}
+                label={`购买 ${pkg.name}`}
+                className="block w-full text-center py-3 rounded-xl bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors"
+              />
+            ))}
+          </div>
         </div>
 
         {/* Pro 会员 */}
@@ -169,12 +174,18 @@ export default function PricingPage() {
             </li>
           </ul>
 
-          <Link
-            href="/auth/signin"
-            className="block text-center py-3 rounded-xl bg-purple-500 text-white font-semibold hover:bg-purple-600 transition-colors"
-          >
-            开通 Pro
-          </Link>
+          <div className="space-y-2">
+            <BuyButton
+              productId={pricing.pro.monthly.id}
+              label={`${formatPrice(pricing.pro.monthly.price)}/月 开通 Pro`}
+              className="block w-full text-center py-3 rounded-xl bg-purple-500 text-white font-semibold hover:bg-purple-600 transition-colors"
+            />
+            <BuyButton
+              productId={pricing.pro.yearly.id}
+              label={`${formatPrice(pricing.pro.yearly.price)}/年 开通 Pro`}
+              className="block w-full text-center py-3 rounded-xl border-2 border-purple-200 text-purple-600 font-semibold hover:bg-purple-50 transition-colors"
+            />
+          </div>
         </div>
       </div>
 

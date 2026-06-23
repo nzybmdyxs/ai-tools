@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { pricing, formatPrice } from "@/lib/pricing";
 import { PLAN_CONFIG } from "@/lib/plans";
+import BuyButton from "@/components/BuyButton";
 
 export const dynamic = "force-dynamic";
 
@@ -119,12 +120,11 @@ export default async function BillingPage() {
                 <p className="text-xs text-gray-400 mb-4">
                   ≈ {formatPrice(pkg.price / pkg.credits)} / 次 · 永不过期
                 </p>
-                <Link
-                  href="/pricing"
-                  className="block text-center py-2 bg-blue-50 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
-                >
-                  立即购买
-                </Link>
+                <BuyButton
+                  productId={pkg.id}
+                  label="立即购买"
+                  className="block w-full text-center py-2 bg-blue-50 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                />
               </div>
             ))}
           </div>

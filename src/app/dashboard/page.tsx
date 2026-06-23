@@ -27,6 +27,7 @@ export default async function DashboardPage() {
         select: {
           diagrams: true,
           favorites: true,
+          invitees: true,
         },
       },
     },
@@ -60,6 +61,12 @@ export default async function DashboardPage() {
       value: `${user._count.favorites}`,
       icon: "⭐",
       color: "bg-yellow-50 text-yellow-700",
+    },
+    {
+      label: "已邀请",
+      value: `${user._count.invitees}`,
+      icon: "🎁",
+      color: "bg-pink-50 text-pink-700",
     },
   ];
 

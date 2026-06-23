@@ -8,6 +8,16 @@ import EmailProvider from "next-auth/providers/email";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
 
+/** 生成 8 位邀请码（去掉易混淆字符 0/O/1/I） */
+function generateInviteCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 8; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
 export const authOptions: AuthOptions = {
   adapter: PrismaAdapter(prisma),
 
@@ -27,10 +37,19 @@ export const authOptions: AuthOptions = {
   callbacks: {
     async session({ session, user }) {
       if (session.user) {
-        // 将数据库用户 ID 注入 session
         (session.user as { id?: string }).id = user.id;
       }
       return session;
+    },
+  },
+
+  events: {
+    /** 新用户注册时自动生成邀请码 */
+    async createUser({ user }) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { inviteCode: generateInviteCode() },
+      });
     },
   },
 };

@@ -28,6 +28,10 @@ const sidebarLinks = [
     label: "💳 会员中心",
   },
   {
+    href: "/dashboard/invite",
+    label: "🎁 邀请好友",
+  },
+  {
     href: "/dashboard/settings",
     label: "⚙️ 账号设置",
   },

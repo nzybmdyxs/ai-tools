@@ -23,16 +23,46 @@ model User {
   // AI 生成次数（FREE 用户默认 30 次）
   credits   Int      @default(30)
 
+  // 邀请码（8位字母数字，注册时自动生成）
+  inviteCode String? @unique
+  // 邀请人 ID（谁邀请了这个用户）
+  inviterId  String?
+  // 邀请人
+  inviter    User?   @relation("UserInvites", fields: [inviterId], references: [id])
+  // 被邀请的用户列表
+  invitees   User[]  @relation("UserInvites")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  orders    Order[]
-  diagrams  Diagram[]
-  favorites Favorite[]
+  orders       Order[]
+  diagrams     Diagram[]
+  favorites    Favorite[]
+  subscription Subscription?
 
   // NextAuth 关联
   accounts  Account[]
   sessions  Session[]
+}
+
+// 订阅记录（会员过期管理）
+model Subscription {
+  id        String    @id @default(cuid())
+
+  userId    String    @unique
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 订阅方案：FREE | PRO
+  plan      String    @default("FREE")
+
+  // 状态：ACTIVE | EXPIRED | CANCELLED
+  status    String    @default("ACTIVE")
+
+  // 过期时间
+  expireAt  DateTime?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
 }
 
 // 生成历史（AI 生成的图表记录）
@@ -78,14 +108,17 @@ model Favorite {
   @@unique([userId, diagramId])
 }
 
-// 游客设备追踪（未登录用户，按设备 ID 限制导出次数）
+// 游客设备追踪（未登录用户，按设备 ID 限制导出次数 + AI生成次数）
 model GuestUsage {
   id          String   @id @default(cuid())
 
   deviceId    String   @unique
 
-  // 已导出次数（上限 3 次）
+  // 已导出次数
   exportCount Int      @default(0)
+
+  // AI 生成次数（游客上限 3 次）
+  aiCount     Int      @default(0)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -105,6 +138,18 @@ model Order {
 
   // 订单状态：PENDING | PAID | FAILED
   status    String   @default("PENDING")
+
+  // ===== 支付相关字段 =====
+  // 商户订单号（唯一）
+  tradeNo   String?  @unique
+  // 商品 ID（对应 pricing.ts 中的产品）
+  productId String?
+  // 购买的次数（CREDITS 类型订单使用）
+  credits   Int?
+  // 支付完成时间
+  paidAt    DateTime?
+  // 会员到期时间（MONTHLY/YEARLY 订单使用）
+  expireAt  DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

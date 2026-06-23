@@ -6,32 +6,24 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_TEMPLATES } from "@/lib/templates-data";
 
 export const metadata: Metadata = {
-  title: "模板库 — AI 结构图模板中心",
+  title: "模板库 — AI 结构图模板中心（30+模板）",
   description:
-    "精选 ER 图、流程图、UML 类图等模板，覆盖电商、博客、学生管理、医院管理等场景，一键使用。",
-  keywords: "ER图模板,流程图模板,UML模板,数据库设计模板",
+    "精选 30+ ER 图、流程图、UML 类图等模板，覆盖电商、博客、学生管理、医院管理、库存、企业管理、SaaS 七大场景，一键使用。",
+  keywords: "ER图模板,流程图模板,UML模板,数据库设计模板,系统架构模板",
 };
 
 /** 模板分类配置 */
 const CATEGORIES: Record<string, { label: string; icon: string; desc: string }> = {
-  电商系统: { label: "电商系统", icon: "🛒", desc: "商城、订单、商品管理相关模板" },
-  博客系统: { label: "博客系统", icon: "📝", desc: "CMS、博客、内容管理相关模板" },
-  学生管理: { label: "学生管理系统", icon: "🎓", desc: "学生、课程、成绩管理模板" },
-  医院管理: { label: "医院管理系统", icon: "🏥", desc: "挂号、病历、药房管理模板" },
-  库存管理: { label: "库存管理系统", icon: "📦", desc: "出入库、盘点、供应链模板" },
-};
-
-/** 图表类型标签（后续可在模板卡片中展示类型） */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _TYPE_LABELS: Record<string, string> = {
-  flow: "流程图",
-  er: "ER 图",
-  uml: "UML 类图",
-  sequence: "时序图",
-  gantt: "甘特图",
-  mindmap: "思维导图",
+  学生管理: { label: "学生管理系统", icon: "🎓", desc: "学生、课程、成绩、图书、宿舍管理模板" },
+  电商系统: { label: "电商系统", icon: "🛒", desc: "商城、订单、支付、购物车相关模板" },
+  库存管理: { label: "库存管理系统", icon: "📦", desc: "出入库、盘点、多仓库、供应链模板" },
+  医院管理: { label: "医院管理系统", icon: "🏥", desc: "挂号、病历、药房、住院管理模板" },
+  博客系统: { label: "博客系统", icon: "📝", desc: "CMS、博客、论坛、内容管理模板" },
+  企业管理: { label: "企业管理", icon: "🏢", desc: "HR、CRM、项目管理、审批流程模板" },
+  SaaS: { label: "SaaS 平台", icon: "☁️", desc: "多租户、RBAC、API网关、微服务模板" },
 };
 
 export default async function TemplatesPage() {
@@ -182,232 +174,3 @@ function TemplateCard({
   );
 }
 
-// ========== 预设模板数据（数据库为空时使用） ==========
-
-const DEFAULT_TEMPLATES = [
-  {
-    id: "tpl-student-er",
-    title: "学生管理系统 ER 图",
-    category: "学生管理",
-    description: "包含学生、课程、教师、成绩等实体的完整 ER 图，适合教务管理系统数据库设计。",
-    preview: "STUDENT ||--o{ ENROLLMENT : has\nCOURSE ||--o{ ENROLLMENT : contains\nTEACHER ||--o{ COURSE : teaches",
-    code: `erDiagram
-  STUDENT {
-    string id PK
-    string name
-    string email
-    date birthDate
-  }
-  COURSE {
-    string id PK
-    string name
-    int credits
-    string teacherId FK
-  }
-  ENROLLMENT {
-    string id PK
-    string studentId FK
-    string courseId FK
-    float score
-  }
-  TEACHER {
-    string id PK
-    string name
-    string department
-  }
-  STUDENT ||--o{ ENROLLMENT : selects
-  COURSE ||--o{ ENROLLMENT : has
-  TEACHER ||--o{ COURSE : teaches`,
-  },
-  {
-    id: "tpl-student-flow",
-    title: "学生选课流程图",
-    category: "学生管理",
-    description: "从登录到选课完成的完整业务流程，包含判断分支和异常处理。",
-    preview: "graph TD\n  A[学生登录] --> B[浏览课程]\n  B --> C{课程人数已满?}",
-    code: `graph TD
-  A[学生登录系统] --> B[浏览可选课程]
-  B --> C{是否有名额?}
-  C -->|是| D[加入选课列表]
-  C -->|否| E[提示课程已满]
-  D --> F[确认选课]
-  F --> G[选课成功]
-  E --> B`,
-  },
-  {
-    id: "tpl-ecommerce-er",
-    title: "电商系统 ER 图",
-    category: "电商系统",
-    description: "用户、商品、订单、购物车、评价等电商核心实体的数据库设计。",
-    preview: "USER ||--o{ ORDER : places\nPRODUCT ||--o{ ORDER_ITEM : contains",
-    code: `erDiagram
-  USER {
-    string id PK
-    string username
-    string email
-    string address
-  }
-  PRODUCT {
-    string id PK
-    string name
-    float price
-    int stock
-  }
-  ORDER {
-    string id PK
-    string userId FK
-    float totalAmount
-    string status
-  }
-  ORDER_ITEM {
-    string id PK
-    string orderId FK
-    string productId FK
-    int quantity
-    float price
-  }
-  USER ||--o{ ORDER : places
-  ORDER ||--o{ ORDER_ITEM : contains
-  PRODUCT ||--o{ ORDER_ITEM : includes`,
-  },
-  {
-    id: "tpl-ecommerce-flow",
-    title: "商品下单流程图",
-    category: "电商系统",
-    description: "从浏览商品到支付成功的完整购物流程，含库存判断和支付分支。",
-    preview: "graph TD\n  A[浏览商品] --> B[加入购物车]\n  B --> C[确认订单]",
-    code: `graph TD
-  A[用户浏览商品] --> B[加入购物车]
-  B --> C[确认订单信息]
-  C --> D{库存是否充足?}
-  D -->|是| E[选择支付方式]
-  D -->|否| F[提示库存不足]
-  E --> G[支付处理]
-  G --> H{支付成功?}
-  H -->|是| I[生成订单]
-  H -->|否| J[支付失败]
-  I --> K[发货]
-  F --> B`,
-  },
-  {
-    id: "tpl-inventory-er",
-    title: "库存管理系统 ER 图",
-    category: "库存管理",
-    description: "仓库、商品、入库单、出库单、供应商等库存管理核心实体设计。",
-    preview: "WAREHOUSE ||--o{ INVENTORY : stores\nPRODUCT ||--o{ INVENTORY : tracked",
-    code: `erDiagram
-  WAREHOUSE {
-    string id PK
-    string name
-    string location
-  }
-  PRODUCT {
-    string id PK
-    string name
-    string sku
-    float costPrice
-  }
-  INVENTORY {
-    string id PK
-    string warehouseId FK
-    string productId FK
-    int quantity
-  }
-  SUPPLIER {
-    string id PK
-    string name
-    string contact
-  }
-  INBOUND {
-    string id PK
-    string productId FK
-    string supplierId FK
-    int quantity
-  }
-  WAREHOUSE ||--o{ INVENTORY : stores
-  PRODUCT ||--o{ INVENTORY : tracked_by
-  SUPPLIER ||--o{ INBOUND : supplies
-  PRODUCT ||--o{ INBOUND : received`,
-  },
-  {
-    id: "tpl-hospital-er",
-    title: "医院挂号系统 ER 图",
-    category: "医院管理",
-    description: "患者、医生、科室、挂号、处方等医院信息系统的数据库设计。",
-    preview: "PATIENT ||--o{ APPOINTMENT : books\nDOCTOR ||--o{ APPOINTMENT : accepts",
-    code: `erDiagram
-  PATIENT {
-    string id PK
-    string name
-    string phone
-    date birthDate
-  }
-  DEPARTMENT {
-    string id PK
-    string name
-    string description
-  }
-  DOCTOR {
-    string id PK
-    string name
-    string departmentId FK
-    string title
-  }
-  APPOINTMENT {
-    string id PK
-    string patientId FK
-    string doctorId FK
-    datetime appointTime
-    string status
-  }
-  PATIENT ||--o{ APPOINTMENT : books
-  DOCTOR ||--o{ APPOINTMENT : accepts
-  DEPARTMENT ||--o{ DOCTOR : has`,
-  },
-  {
-    id: "tpl-blog-er",
-    title: "博客系统 ER 图",
-    category: "博客系统",
-    description: "用户、文章、分类、评论、标签等 CMS 博客系统的数据库设计。",
-    preview: "USER ||--o{ POST : writes\nPOST ||--o{ COMMENT : has",
-    code: `erDiagram
-  USER {
-    string id PK
-    string username
-    string email
-    string avatar
-  }
-  POST {
-    string id PK
-    string userId FK
-    string title
-    string content
-    string categoryId FK
-  }
-  CATEGORY {
-    string id PK
-    string name
-    string slug
-  }
-  COMMENT {
-    string id PK
-    string postId FK
-    string userId FK
-    string content
-  }
-  TAG {
-    string id PK
-    string name
-  }
-  POST_TAG {
-    string postId FK
-    string tagId FK
-  }
-  USER ||--o{ POST : writes
-  USER ||--o{ COMMENT : posts
-  POST ||--o{ COMMENT : has
-  CATEGORY ||--o{ POST : contains
-  POST ||--o{ POST_TAG : tagged
-  TAG ||--o{ POST_TAG : used`,
-  },
-];

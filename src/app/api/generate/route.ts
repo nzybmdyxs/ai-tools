@@ -21,7 +21,7 @@ import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
   try {
-    const { text, type, userId } = await req.json();
+    const { text, type, userId, deviceId } = await req.json();
 
     // ===== 参数校验 =====
     if (!text || typeof text !== "string" || text.trim().length === 0) {
@@ -40,48 +40,73 @@ export async function POST(req: NextRequest) {
     }
 
     // ===== 用户权限校验 =====
-    if (!userId) {
-      // 游客不可使用 AI 生成
-      return NextResponse.json(
-        {
-          error: "请先登录后使用 AI 生成功能",
-          needLogin: true,
-        },
-        { status: 401 }
-      );
-    }
+    let creditsRemain: number | null = null;
+    let guestCreditsRemain: number | null = null;
 
-    // 查询用户
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { id: true, plan: true, credits: true },
-    });
+    if (userId) {
+      // ===== 登录用户 =====
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { id: true, plan: true, credits: true },
+      });
 
-    if (!user) {
-      return NextResponse.json(
-        { error: "用户不存在" },
-        { status: 404 }
-      );
-    }
+      if (!user) {
+        return NextResponse.json({ error: "用户不存在" }, { status: 404 });
+      }
 
-    // Pro 会员：无限使用
-    if (user.plan === "PRO") {
-      // 直接生成，不扣次数
+      if (user.plan === "PRO") {
+        // Pro 会员：无限使用
+        creditsRemain = -1;
+      } else {
+        // FREE 用户：检查剩余次数
+        if (user.credits <= 0) {
+          return NextResponse.json({
+            error: "AI 生成次数已用完",
+            needUpgrade: true,
+            message: "请购买次数包或升级 Pro 会员",
+          });
+        }
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { credits: { decrement: 1 } },
+        });
+        creditsRemain = Math.max(0, user.credits - 1);
+      }
     } else {
-      // FREE 用户：检查剩余次数
-      if (user.credits <= 0) {
-        return NextResponse.json({
-          error: "AI 生成次数已用完",
-          needUpgrade: true,
-          message: "请购买次数包或升级 Pro 会员",
+      // ===== 游客：按 deviceId 追踪（3次免费） =====
+      if (!deviceId || typeof deviceId !== "string") {
+        return NextResponse.json(
+          { error: "请先登录后使用 AI 生成功能", needLogin: true },
+          { status: 401 }
+        );
+      }
+
+      let guest = await prisma.guestUsage.findUnique({
+        where: { deviceId },
+      });
+
+      if (!guest) {
+        guest = await prisma.guestUsage.create({
+          data: { deviceId, exportCount: 0, aiCount: 0 },
         });
       }
 
-      // 扣减次数
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { credits: { decrement: 1 } },
+      const GUEST_AI_LIMIT = 3;
+      if (guest.aiCount >= GUEST_AI_LIMIT) {
+        return NextResponse.json({
+          error: "免费次数已用完，请注册后继续使用",
+          needLogin: true,
+          guestUsedUp: true,
+          message: `游客可免费生成 ${GUEST_AI_LIMIT} 次，注册即送 30 次`,
+        });
+      }
+
+      await prisma.guestUsage.update({
+        where: { deviceId },
+        data: { aiCount: { increment: 1 } },
       });
+
+      guestCreditsRemain = GUEST_AI_LIMIT - guest.aiCount - 1;
     }
 
     // ===== 调用 AI 生成 =====
@@ -123,11 +148,16 @@ export async function POST(req: NextRequest) {
 
     const result = res.choices[0]?.message?.content || "";
 
-    return NextResponse.json({
-      result,
-      creditsRemain: user.plan === "PRO" ? -1 : Math.max(0, user.credits - 1),
-      plan: user.plan,
-    });
+    const response: Record<string, unknown> = { result };
+    if (userId) {
+      response.creditsRemain = creditsRemain;
+      response.plan = creditsRemain === -1 ? "PRO" : "FREE";
+    }
+    if (guestCreditsRemain !== null) {
+      response.guestCreditsRemain = guestCreditsRemain;
+    }
+
+    return NextResponse.json(response);
   } catch (error: unknown) {
     console.error("AI 生成失败:", error);
 

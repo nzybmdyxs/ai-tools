@@ -7,9 +7,9 @@ export const PLAN_CONFIG = {
   /** 游客（未登录，按设备 ID 追踪） */
   guest: {
     /** 免费导出次数上限 */
-    exportLimit: 3,
-    /** 游客不可使用 AI 生成 */
-    aiCredits: 0,
+    exportLimit: 1,
+    /** 游客可免费使用 AI 生成 3 次（先体验，再注册） */
+    aiCredits: 3,
   },
 
   /** 免费注册用户 */
