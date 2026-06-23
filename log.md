@@ -2,6 +2,88 @@
 
 ---
 
+## V2.4 — 技术壁垒 (2026-06-22)
+
+### 🧠 规则引擎扩展（9 种输入类型）
+- **Java → UML**：正则解析 class/field/method → classDiagram
+- **SpringBoot → 架构图**：@RestController/@Service/@Repository → flowchart TB
+- **Markdown → 思维导图**：#/##/### 标题层级 → mindmap
+- 检测引擎升级：SQL/JSON/OpenAPI/Java/Spring/Markdown/Mermaid/TEXT
+
+### 📜 版本历史
+- `DiagramVersion` 模型：diagramId + result + version + createdAt
+- 每次保存自动创建版本快照
+- 支持查看历史版本、回滚到指定版本
+
+---
+
+## V2.3 — 流量增长闭环 (2026-06-22)
+
+### 🔥 热门排行榜
+- `/ranking` 页面：公开图表 Top50 + 热门模板 Top20
+- 按 views/uses 排序
+
+### 🔗 分享系统升级
+- Diagram 新增 `public` + `views` 字段
+- `/api/diagram/share` 公开分享开关 API
+- 分享页自动 views++
+- 导航新增 🔥排行榜
+
+### 💾 草稿自动保存
+- localStorage 500ms 防抖自动保存 { text, type }
+- 页面刷新自动恢复草稿
+
+### 📊 模板统计
+- Template 新增 `views` + `uses` 计数
+- 模板详情页自动 views++
+- `/api/templates` 支持 `?view=id` + POST 使用记录
+
+---
+
+## V2.2 — 成本控制 & 会员体系 (2026-06-22)
+
+### 💰 4 级套餐体系
+- FREE 免费版 3次/天 · TRIAL 体验包 ¥1 10次 · PRO 标准会员 ¥19/月 10次/天 · VIP Pro会员 ¥39/月 50次/天
+- 每日限额检查 `checkDailyLimit()` + `incrementDailyUsage()`
+
+### 📊 AI 成本追踪
+- `Usage` 模型：model/inputTokens/outputTokens/cost
+- `DailyUsage` 模型：userId+date unique + count
+- Token 成本估算（deepseek ~$0.00014/K）
+- Dashboard 显示今日用量 + Token 消耗
+
+### ⚡ 零成本生成器
+- SQL → ER（PK/FK/关系识别）
+- JSON → UML 类图（递归嵌套+数组）
+- OpenAPI → 架构图（YAML/JSON，按Tag分组）
+- 前端 `⚡规则:sql` / `⚡规则:json` 标签
+
+---
+
+## V2.1 — 产品化 UI (2026-06-22)
+
+### 🎨 V2 设计系统
+- 设计令牌：typography/spacing/radius/transitions
+- 通用组件：PageHeader / ToolCard / SectionTitle / EmptyState
+- 全局字号 17px / 行高 1.7 / section 间距 5rem
+
+### 📐 AI制图中心三栏工作台
+- 左栏 DiagramSidebar（4组12种图类型）
+- 中栏 InputBox（类型+模式+输入）
+- 右栏 DiagramPreview（工具栏+渲染+源码）
+
+### 🧭 产品结构
+- `/student` 学生工具中心（5核心 + 4辅助）
+- `/developer` 程序员工具中心（6核心 + 4架构）
+- `/templates` 模板中心（按分类分组）
+- `/templates/[slug]` 模板详情（预览+一键使用+推荐）
+- `/tools/[type]` 12个SEO落地页（动态metadata）
+- `/admin` 管理后台壳（6模块）
+- `/pricing` V2四栏套餐对比
+- NavBar 配置驱动（7项 + 控制台 + 升级Pro）
+
+---
+
 ## V1.3 (2026-06-22)
 
 ### 🎨 UX 体验优化

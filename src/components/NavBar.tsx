@@ -1,18 +1,13 @@
 "use client";
 
+// ==========================================
+// V2 导航栏 — 配置驱动
+// ==========================================
+
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const navLinks = [
-  { href: "/", label: "🏠 首页" },
-  { href: "/apps", label: "🧰 工具导航" },
-  { href: "/tools", label: "🧠 制图工具" },
-  { href: "/students", label: "🎓 学生工具" },
-  { href: "/dev-tools", label: "👨‍💻 程序员工具" },
-  { href: "/blog", label: "📝 博客" },
-  { href: "/pricing", label: "👑 升级Pro" },
-];
+import { NAV_ITEMS } from "@/config/navigation";
 
 export function NavBar() {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -24,38 +19,55 @@ export function NavBar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-gray-200">
-      <nav className="max-w-6xl mx-auto px-4 py-3">
-        {/* 桌面端导航 */}
-        <div className="flex items-center justify-between">
+    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-gray-200">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6">
+        <nav className="flex items-center justify-between h-16">
+          {/* Logo */}
           <Link
             href="/"
-            className="text-lg font-bold text-gray-800 hover:text-blue-600 transition-colors"
+            className="text-xl font-extrabold text-gray-800 hover:text-blue-600 transition-colors tracking-tight"
           >
             🧠 AI工具集
           </Link>
 
-          {/* 桌面链接 */}
-          <div className="hidden md:flex items-center gap-1">
-            {navLinks.map((link) => (
+          {/* 桌面端导航 */}
+          <div className="hidden lg:flex items-center gap-1">
+            {NAV_ITEMS.map((item) => (
               <Link
-                key={link.href}
-                href={link.href}
+                key={item.href}
+                href={item.href}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  isActive(link.href)
+                  isActive(item.href)
                     ? "bg-blue-50 text-blue-600"
-                    : "text-gray-600 hover:text-blue-600 hover:bg-blue-50"
+                    : "text-gray-600 hover:text-blue-600 hover:bg-gray-50"
                 }`}
               >
-                {link.label}
+                {item.icon && <span className="mr-1.5">{item.icon}</span>}
+                {item.label}
               </Link>
             ))}
           </div>
 
-          {/* 移动端汉堡按钮 */}
+          {/* 右侧操作 */}
+          <div className="hidden lg:flex items-center gap-3">
+            <Link
+              href="/dashboard"
+              className="px-4 py-2 text-sm font-medium text-gray-600 hover:text-blue-600 transition-colors"
+            >
+              控制台
+            </Link>
+            <Link
+              href="/pricing"
+              className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              升级 Pro
+            </Link>
+          </div>
+
+          {/* 移动端汉堡 */}
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
-            className="md:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
+            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 transition-colors"
             aria-label="切换菜单"
           >
             {mobileOpen ? (
@@ -68,30 +80,38 @@ export function NavBar() {
               </svg>
             )}
           </button>
-        </div>
+        </nav>
 
-        {/* 移动端下拉菜单 */}
+        {/* 移动端菜单 */}
         {mobileOpen && (
-          <div className="md:hidden mt-3 border-t border-gray-100 pt-3 animate-fade-in">
-            <div className="flex flex-col gap-1">
-              {navLinks.map((link) => (
+          <div className="lg:hidden pb-4 border-t border-gray-100 animate-fade-in">
+            <div className="flex flex-col gap-1 pt-3">
+              {NAV_ITEMS.map((item) => (
                 <Link
-                  key={link.href}
-                  href={link.href}
+                  key={item.href}
+                  href={item.href}
                   onClick={() => setMobileOpen(false)}
-                  className={`px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
-                    isActive(link.href)
+                  className={`px-3 py-2.5 rounded-lg text-sm font-medium ${
+                    isActive(item.href)
                       ? "bg-blue-50 text-blue-600"
-                      : "text-gray-600 hover:text-blue-600 hover:bg-blue-50"
+                      : "text-gray-600 hover:text-blue-600 hover:bg-gray-50"
                   }`}
                 >
-                  {link.label}
+                  {item.icon && <span className="mr-2">{item.icon}</span>}
+                  {item.label}
                 </Link>
               ))}
+              <Link
+                href="/dashboard"
+                onClick={() => setMobileOpen(false)}
+                className="px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:text-blue-600"
+              >
+                🖥️ 控制台
+              </Link>
             </div>
           </div>
         )}
-      </nav>
+      </div>
     </header>
   );
 }

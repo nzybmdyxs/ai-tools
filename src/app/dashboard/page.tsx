@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { hasUnlimitedAccess } from "@/lib/auth/admin";
+import { getPlanName, getDailyLimit } from "@/lib/plans";
 
 export default async function DashboardPage() {
   const session = await getServerSession(authOptions);
@@ -39,18 +40,39 @@ export default async function DashboardPage() {
     redirect("/auth/signin");
   }
 
+  // 获取今日使用次数
+  const today = new Date().toISOString().slice(0, 10);
+  const todayUsage = await prisma.dailyUsage.findUnique({
+    where: { userId_date: { userId: user.id, date: today } },
+  });
+
+  // 获取总 Token 消耗
+  const tokenStats = await prisma.usage.aggregate({
+    where: { userId: user.id },
+    _sum: { totalTokens: true, cost: true },
+  });
+
+  const dailyLimit = getDailyLimit(user.plan);
+  const todayCount = todayUsage?.count || 0;
+
   const stats = [
     {
       label: "当前套餐",
-      value: isAdmin ? "🔧 超级管理员" : user.plan === "PRO" ? "Pro 会员" : "免费版",
+      value: isAdmin ? "🔧 超级管理员" : getPlanName(user.plan),
       icon: "💎",
       color: isAdmin ? "bg-green-50 text-green-700" : user.plan === "PRO" ? "bg-purple-50 text-purple-700" : "bg-gray-50 text-gray-700",
     },
     {
-      label: "剩余 AI 次数",
-      value: isAdmin || user.plan === "PRO" ? "无限" : `${user.credits}`,
+      label: "今日已用 / 限额",
+      value: isAdmin ? "∞" : dailyLimit < 0 ? "无限" : `${todayCount} / ${dailyLimit}`,
       icon: "🎯",
-      color: "bg-blue-50 text-blue-700",
+      color: dailyLimit > 0 && todayCount >= dailyLimit ? "bg-red-50 text-red-700" : "bg-blue-50 text-blue-700",
+    },
+    {
+      label: "Token 消耗",
+      value: tokenStats._sum.totalTokens ? `${(tokenStats._sum.totalTokens / 1000).toFixed(1)}K` : "0",
+      icon: "⚡",
+      color: "bg-yellow-50 text-yellow-700",
     },
     {
       label: "历史图表",

@@ -1,6 +1,5 @@
 // ==========================================
-// 模板库 API
-// GET /api/templates — 获取所有模板（可按分类筛选）
+// 模板库 API — V2: 含浏览/使用计数
 // ==========================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,17 +11,39 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const category = searchParams.get("category");
+    const trackView = searchParams.get("view"); // 记录浏览
+
+    if (trackView) {
+      await prisma.template.update({
+        where: { id: trackView },
+        data: { views: { increment: 1 } },
+      }).catch(() => {});
+    }
 
     const where = category ? { category } : {};
-
     const templates = await prisma.template.findMany({
       where,
-      orderBy: { createdAt: "desc" },
+      orderBy: { views: "desc" },
     });
 
     return NextResponse.json({ templates });
-  } catch (error) {
-    console.error("获取模板列表失败:", error);
+  } catch {
     return NextResponse.json({ error: "服务器错误" }, { status: 500 });
+  }
+}
+
+/** 记录模板使用 */
+export async function POST(req: NextRequest) {
+  try {
+    const { templateId } = await req.json();
+    if (templateId) {
+      await prisma.template.update({
+        where: { id: templateId },
+        data: { uses: { increment: 1 } },
+      });
+    }
+    return NextResponse.json({ success: true });
+  } catch {
+    return NextResponse.json({ success: false }, { status: 500 });
   }
 }

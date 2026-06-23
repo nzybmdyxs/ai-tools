@@ -3,8 +3,8 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import InputBox from "@/components/InputBox";
-import DiagramBox from "@/components/DiagramBox";
-import { DiagramSkeleton } from "@/components/DiagramSkeleton";
+import { DiagramSidebar } from "@/components/diagram/DiagramSidebar";
+import { DiagramPreview } from "@/components/diagram/DiagramPreview";
 import { DIAGRAM_CONFIG } from "@/config/diagram-types";
 import type { DiagramType, ERNotation, GenerationMode } from "@/types/diagram";
 import { cleanMermaidCode } from "@/lib/mermaid";
@@ -29,17 +29,39 @@ function ToolContent() {
   const [error, setError] = useState("");
   const [rawCode, setRawCode] = useState("");
   const [savedId, setSavedId] = useState<string | null>(null);
-  const [favorited, setFavorited] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState("");
   const [fromTemplate, setFromTemplate] = useState(false);
   const [repaired, setRepaired] = useState(false);
-  const [step, setStep] = useState("");
+  const [detectedMode, setDetectedMode] = useState("");
 
   // Mermaid 预加载
   useEffect(() => {
     import("mermaid");
   }, []);
+
+  // 加载草稿
+  useEffect(() => {
+    if (loadId || templateId) return;
+    try {
+      const draft = localStorage.getItem("diagram_draft");
+      if (draft) {
+        const d = JSON.parse(draft);
+        if (d.text) setText(d.text);
+        if (d.type) setDiagramType(d.type as DiagramType);
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  // 自动保存草稿（500ms 防抖）
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (text.trim()) {
+        localStorage.setItem("diagram_draft", JSON.stringify({ text, type: diagramType }));
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [text, diagramType]);
 
   // 加载已有图表或模板
   useEffect(() => {
@@ -97,18 +119,9 @@ function ToolContent() {
     setResult("");
     setRawCode("");
     setSavedId(null);
-    setFavorited(false);
     setFromTemplate(false);
     setRepaired(false);
-
-    // 步骤动画
-    const steps = ["正在分析需求...", "正在生成图表...", "正在校验语法..."];
-    let stepIdx = 0;
-    setStep(steps[0]);
-    const stepTimer = setInterval(() => {
-      stepIdx = (stepIdx + 1) % steps.length;
-      setStep(steps[stepIdx]);
-    }, 1200);
+    setDetectedMode("");
 
     const deviceId = getDeviceId();
 
@@ -139,15 +152,14 @@ function ToolContent() {
         setResult(cleaned);
         if (data.fromTemplate) setFromTemplate(true);
         if (data.repaired) setRepaired(true);
+        if (data.mode) setDetectedMode(data.mode);
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "生成失败，请稍后重试";
       setError(message);
       setResult("");
     } finally {
-      clearInterval(stepTimer);
       setLoading(false);
-      setStep("");
     }
   };
 
@@ -215,31 +227,6 @@ function ToolContent() {
     }
   };
 
-  /** 添加/取消收藏 */
-  const toggleFavorite = async () => {
-    if (!userId || !savedId) return;
-
-    try {
-      if (favorited) {
-        await fetch("/api/favorites", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ diagramId: savedId }),
-        });
-        setFavorited(false);
-      } else {
-        await fetch("/api/favorites", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ diagramId: savedId }),
-        });
-        setFavorited(true);
-      }
-    } catch {
-      // 静默忽略
-    }
-  };
-
   const copyCode = () => {
     const codeToCopy = rawCode || result;
     if (!codeToCopy) return;
@@ -280,243 +267,102 @@ function dbTypeToDiagramType(t: string): DiagramType {
 }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 py-8 space-y-8">
-      {/* 面包屑 */}
-      <div className="text-sm text-gray-400">
-        <Link href="/" className="hover:text-blue-600">
-          首页
-        </Link>
-        <span className="mx-2">/</span>
-        <Link href="/tools" className="hover:text-blue-600">
-          制图工具
-        </Link>
-        <span className="mx-2">/</span>
-        <span className="text-gray-600">AI 结构图生成器</span>
-      </div>
-
-      {/* 标题 */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-800">
-          🤖 AI 结构图生成器
-        </h1>
-        <p className="text-gray-500 mt-2 text-lg">
-          输入文字描述，AI 自动生成专业的 Mermaid 结构图 — 支持{" "}
-          {Object.keys(DIAGRAM_CONFIG).length} 种图表类型
-        </p>
-      </div>
-
-      {/* 输入区域 */}
-      <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <h2 className="text-lg font-semibold text-gray-700 mb-4">
-          ✏️ 输入内容
-        </h2>
-        <InputBox
-          text={text}
-          diagramType={diagramType}
-          erNotation={erNotation}
-          generationMode={generationMode}
-          loading={loading}
-          onTextChange={(t) => {
-            setText(t);
-            setError("");
-          }}
-          onDiagramTypeChange={setDiagramType}
-          onERNotationChange={setERNotation}
-          onGenerationModeChange={setGenerationMode}
-          onGenerate={generate}
-        />
-      </section>
-
-      {/* 错误提示 */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <span className="text-red-500 text-lg">⚠️</span>
-            <p className="text-red-700 font-medium">生成失败</p>
-          </div>
-          <p className="text-red-600 text-sm mt-1 ml-7">{error}</p>
-          {error.includes("登录") && (
-            <div className="mt-3 ml-7">
-              <Link
-                href="/auth/signin"
-                className="inline-block px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600"
-              >
-                去登录 →
-              </Link>
-            </div>
+    <div className="h-[calc(100vh-4rem)] flex flex-col">
+      {/* 顶部工具栏 */}
+      <div className="flex items-center justify-between px-4 sm:px-6 py-2.5 bg-white border-b border-gray-200 flex-shrink-0">
+        <div className="flex items-center gap-3 text-sm">
+          <Link href="/" className="text-gray-400 hover:text-blue-600">首页</Link>
+          <span className="text-gray-300">/</span>
+          <Link href="/tools" className="text-gray-400 hover:text-blue-600">制图</Link>
+          <span className="text-gray-300">/</span>
+          <span className="font-semibold text-gray-700">
+            {DIAGRAM_CONFIG[diagramType]?.icon} {DIAGRAM_CONFIG[diagramType]?.label}
+          </span>
+          {detectedMode && detectedMode !== "ai" && (
+            <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full font-medium">
+              ⚡规则:{detectedMode}
+            </span>
           )}
-          {error.includes("次数已用完") && (
-            <div className="mt-3 ml-7">
-              <Link
-                href="/pricing"
-                className="inline-block px-4 py-2 bg-blue-500 text-white text-sm font-medium rounded-lg hover:bg-blue-600"
-              >
-                升级会员 →
-              </Link>
-            </div>
-          )}
+          {fromTemplate && <span className="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">⚡模板</span>}
+          {repaired && <span className="px-2 py-0.5 text-xs bg-yellow-100 text-yellow-700 rounded-full">🔧已修复</span>}
         </div>
-      )}
+        <div className="flex items-center gap-2">
+          {!userId && (
+            <Link href="/auth/signin" className="text-xs text-blue-600 hover:underline">
+              登录保存历史
+            </Link>
+          )}
+          {saveMsg && <span className="text-xs text-green-600">{saveMsg}</span>}
+        </div>
+      </div>
 
-      {/* 结果展示 */}
-      <section className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-700">
-            📈 生成结果
-            {loading && (
-              <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 text-xs font-medium bg-blue-100 text-blue-700 rounded-full">
-                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-ping" />
-                生成中
-              </span>
-            )}
-            {fromTemplate && (
-              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-green-100 text-green-700 rounded-full">
-                ⚡ 模板匹配
-              </span>
-            )}
-            {repaired && (
-              <span className="ml-2 px-2 py-0.5 text-xs font-medium bg-yellow-100 text-yellow-700 rounded-full">
-                🔧 已自动修复
-              </span>
-            )}
-            {result && !loading && (
-              <span className="ml-2 text-sm font-normal text-gray-400">
-                - {DIAGRAM_CONFIG[diagramType]?.label}
-              </span>
-            )}
-          </h2>
-          <div className="flex gap-2">
-            {result && (
-              <>
-                <button
-                  id="copy-btn"
-                  onClick={copyCode}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-                >
-                  📋 复制代码
-                </button>
-                <button
-                  onClick={downloadSVG}
-                  className="px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 transition-colors"
-                >
-                  📥 下载 SVG
-                </button>
-                <button
-                  onClick={handleRepair}
-                  disabled={loading}
-                  className="px-3 py-1.5 text-xs font-medium text-yellow-600 bg-yellow-50 rounded-md hover:bg-yellow-100 disabled:opacity-50 transition-colors"
-                >
-                  🔧 修复
-                </button>
-              </>
-            )}
-            {userId && result && (
-              <>
-                <button
-                  onClick={saveToHistory}
-                  disabled={saving}
-                  className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-md hover:bg-blue-100 disabled:opacity-50 transition-colors"
-                >
-                  {saving ? "保存中..." : savedId ? "✅ 已保存" : "💾 保存"}
-                </button>
-                {savedId && (
-                  <button
-                    onClick={toggleFavorite}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                      favorited
-                        ? "text-yellow-600 bg-yellow-50 hover:bg-yellow-100"
-                        : "text-gray-600 bg-gray-100 hover:bg-gray-200"
-                    }`}
-                  >
-                    {favorited ? "⭐ 已收藏" : "☆ 收藏"}
-                  </button>
+      {/* 三栏工作区 */}
+      <div className="flex-1 flex min-h-0">
+        {/* 左栏：图类型选择 */}
+        <div className="w-56 border-r border-gray-200 bg-white p-4 overflow-y-auto flex-shrink-0 hidden lg:block">
+          <DiagramSidebar active={diagramType} onChange={setDiagramType} />
+        </div>
+
+        {/* 中栏：输入区 */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-gray-200">
+          {/* 移动端类型选择 */}
+          <div className="lg:hidden px-4 pt-4">
+            <select
+              value={diagramType}
+              onChange={(e) => setDiagramType(e.target.value as DiagramType)}
+              className="w-full p-2 border border-gray-200 rounded-lg text-sm"
+            >
+              {Object.values(DIAGRAM_CONFIG).map((t) => (
+                <option key={t.value} value={t.value}>{t.icon} {t.label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+            <InputBox
+              text={text}
+              diagramType={diagramType}
+              erNotation={erNotation}
+              generationMode={generationMode}
+              loading={loading}
+              onTextChange={(t) => { setText(t); setError(""); }}
+              onDiagramTypeChange={setDiagramType}
+              onERNotationChange={setERNotation}
+              onGenerationModeChange={setGenerationMode}
+              onGenerate={generate}
+            />
+
+            {/* 错误提示 */}
+            {error && (
+              <div className="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 animate-fade-in">
+                <p className="text-sm text-red-700 font-medium">⚠️ {error}</p>
+                {error.includes("登录") && (
+                  <Link href="/auth/signin" className="inline-block mt-2 px-4 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg">去登录 →</Link>
                 )}
-              </>
+                {error.includes("次数已用完") && (
+                  <Link href="/pricing" className="inline-block mt-2 px-4 py-1.5 bg-blue-500 text-white text-xs font-medium rounded-lg">升级会员 →</Link>
+                )}
+              </div>
             )}
           </div>
         </div>
 
-        {/* 保存状态提示 */}
-        {saveMsg && (
-          <div
-            className={`mb-3 text-xs px-3 py-1.5 rounded-lg ${
-              saveMsg.startsWith("✅")
-                ? "bg-green-50 text-green-600"
-                : "bg-yellow-50 text-yellow-600"
-            }`}
-          >
-            {saveMsg}
-          </div>
-        )}
-
-        <div className="diagram-container">
-          {loading && !result ? (
-            <DiagramSkeleton step={step} />
-          ) : (
-            <DiagramBox code={result} />
-          )}
+        {/* 右栏：预览 */}
+        <div className="w-full lg:w-[480px] flex-shrink-0">
+          <DiagramPreview
+            code={result}
+            rawCode={rawCode}
+            loading={loading}
+            error={error}
+            onCopy={copyCode}
+            onDownload={downloadSVG}
+            onRepair={handleRepair}
+            onSave={saveToHistory}
+            saved={!!savedId}
+            saving={saving}
+          />
         </div>
-
-        {rawCode && (
-          <details className="mt-4">
-            <summary className="text-sm text-gray-500 cursor-pointer hover:text-gray-700">
-              📝 查看 Mermaid 源代码
-            </summary>
-            <pre className="mt-2 p-4 bg-gray-900 text-green-400 rounded-lg text-sm overflow-x-auto max-h-64 overflow-y-auto">
-              {rawCode}
-            </pre>
-          </details>
-        )}
-      </section>
-
-      {/* 未登录提示 */}
-      {!userId && result && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-6 text-center animate-fade-in">
-          <p className="text-blue-700 font-medium mb-2">
-            💡 登录后可保存图表到历史记录
-          </p>
-          <p className="text-blue-500 text-sm mb-4">
-            支持收藏、分类管理、随时回看
-          </p>
-          <Link
-            href="/auth/signin"
-            className="inline-block px-6 py-2.5 bg-blue-500 text-white font-medium rounded-xl hover:bg-blue-600 transition-colors"
-          >
-            免费注册 / 登录
-          </Link>
-        </div>
-      )}
-
-      {/* 相关链接 */}
-      <section className="bg-gray-50 rounded-xl p-6">
-        <h3 className="font-semibold text-gray-700 mb-3">📚 相关教程</h3>
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/tools/flowchart"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            流程图怎么画？
-          </Link>
-          <Link
-            href="/tools/er"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            ER 图教程
-          </Link>
-          <Link
-            href="/tools/uml"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            UML 类图教程
-          </Link>
-          <Link
-            href="/tools/templates"
-            className="text-sm text-blue-600 hover:underline"
-          >
-            📦 模板库
-          </Link>
-        </div>
-      </section>
+      </div>
     </div>
   );
 }

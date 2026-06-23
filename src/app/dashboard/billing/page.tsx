@@ -8,9 +8,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { pricing, formatPrice } from "@/lib/pricing";
-import { PLAN_CONFIG } from "@/lib/plans";
-import BuyButton from "@/components/BuyButton";
+import { formatPrice } from "@/lib/pricing";
+import { PLANS, getPlanName, type PlanType } from "@/lib/plans";
 
 export const dynamic = "force-dynamic";
 
@@ -39,10 +38,9 @@ export default async function BillingPage() {
     redirect("/auth/signin");
   }
 
-  const planName = user.plan === "PRO" ? "Pro 会员" : "免费版";
-  const creditsDisplay =
-    user.plan === "PRO" ? "无限" : `${user.credits} 次`;
-  const planConfig = user.plan === "PRO" ? PLAN_CONFIG.pro : PLAN_CONFIG.free;
+  const planName = getPlanName(user.plan);
+  const planData = PLANS[user.plan as PlanType] || PLANS.FREE;
+  const creditsDisplay = planData.dailyLimit < 0 ? "无限" : `${planData.dailyLimit} 次/天`;
 
   return (
     <div className="max-w-4xl">
@@ -82,7 +80,7 @@ export default async function BillingPage() {
           <div className="bg-white/60 rounded-xl p-4">
             <div className="text-sm text-gray-500 mb-1">导出权限</div>
             <div className="text-2xl font-bold text-green-600">
-              {planConfig.exportUnlimited ? "无限" : `${PLAN_CONFIG.guest.exportLimit} 次`}
+              {planData.exportLimit < 0 ? "无限" : `${planData.exportLimit} 次`}
             </div>
           </div>
         </div>
@@ -99,34 +97,29 @@ export default async function BillingPage() {
         )}
       </div>
 
-      {/* 购买次数包 */}
-      {user.plan !== "PRO" && (
+      {/* 可选套餐 */}
+      {user.plan !== "VIP" && (
         <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-8">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">
-            📦 购买 AI 生成次数
-          </h3>
-          <div className="grid sm:grid-cols-2 gap-4">
-            {pricing.credits.map((pkg) => (
-              <div
-                key={pkg.id}
-                className="border border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors"
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-semibold text-gray-800">{pkg.name}</h4>
-                  <span className="text-2xl font-bold text-blue-600">
-                    {formatPrice(pkg.price)}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 mb-4">
-                  ≈ {formatPrice(pkg.price / pkg.credits)} / 次 · 永不过期
-                </p>
-                <BuyButton
-                  productId={pkg.id}
-                  label="立即购买"
-                  className="block w-full text-center py-2 bg-blue-50 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
-                />
-              </div>
-            ))}
+          <h3 className="text-lg font-semibold text-gray-800 mb-4">📦 升级套餐</h3>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {(["TRIAL", "PRO", "VIP"] as PlanType[])
+              .filter((k) => k !== user.plan)
+              .map((key) => {
+                const plan = PLANS[key];
+                return (
+                  <div key={key} className="border border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
+                    <h4 className="font-semibold text-gray-800">{plan.name}</h4>
+                    <p className="text-2xl font-bold text-blue-600 mt-1">{plan.priceLabel}</p>
+                    <p className="text-xs text-gray-400 mb-4">{plan.dailyLimit_}</p>
+                    <Link
+                      href="/pricing"
+                      className="block text-center py-2 bg-blue-50 text-blue-600 text-sm font-medium rounded-lg hover:bg-blue-100 transition-colors"
+                    >
+                      查看详情
+                    </Link>
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}

@@ -4,6 +4,8 @@ import { matchTemplate } from "@/lib/prompt";
 import { buildPrompt } from "@/config/build-prompt";
 import { sqlToMermaid } from "@/lib/sql/sql-to-mermaid";
 import { fixAndValidate } from "@/lib/mermaid/fix-and-validate";
+import { detectInputType } from "@/lib/detect-input";
+import { logUsage, checkDailyLimit, incrementDailyUsage, estimateCost } from "@/lib/usage";
 import type { DiagramType, ERNotation, GenerationMode } from "@/types/diagram";
 import { prisma } from "@/lib/prisma";
 import { hasUnlimitedAccess } from "@/lib/auth/admin";
@@ -35,16 +37,24 @@ export async function POST(req: NextRequest) {
     // ===== 权限校验 =====
     const session = await getServerSession(authOptions);
     const isAdmin = hasUnlimitedAccess(session);
+    let currentUserId: string | null = null;
+
     if (!isAdmin) {
       if (userId) {
         const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, plan: true, credits: true } });
         if (!user) return new Response(JSON.stringify({ error: "用户不存在" }), { status: 404 });
-        if (user.plan !== "PRO" && user.credits <= 0) {
-          return new Response(JSON.stringify({ error: "次数已用完", needUpgrade: true }), { status: 402 });
+
+        // 每日限额检查
+        try {
+          await checkDailyLimit(user.id, user.plan);
+        } catch (e) {
+          return new Response(
+            JSON.stringify({ error: (e as Error).message, needUpgrade: true }),
+            { status: 402 }
+          );
         }
-        if (user.plan !== "PRO") {
-          await prisma.user.update({ where: { id: user.id }, data: { credits: { decrement: 1 } } });
-        }
+
+        currentUserId = user.id;
       } else if (deviceId && typeof deviceId === "string") {
         let guest = await prisma.guestUsage.findUnique({ where: { deviceId } });
         if (!guest) guest = await prisma.guestUsage.create({ data: { deviceId, exportCount: 0, aiCount: 0 } });
@@ -55,12 +65,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ===== 规则引擎：检测输入类型，零成本路径 =====
+    let effectiveMode = generationMode;
+    if (generationMode === "ai") {
+      const inputType = detectInputType(text.trim());
+      if (inputType === "SQL") effectiveMode = "sql";
+      // JSON → 类图等规则可后续扩展
+    }
+
     // ===== 按模式生成 Mermaid 代码 =====
     let mermaidCode: string;
     let fromTemplate = false;
     let repaired = false;
 
-    switch (generationMode) {
+    switch (effectiveMode) {
       case "sql": {
         // SQL → Mermaid 直接转换（不需 AI）
         const result = sqlToMermaid(text.trim());
@@ -90,7 +108,7 @@ export async function POST(req: NextRequest) {
         } else {
           // 调用 AI 生成
           const userPrompt = buildPrompt({ diagramType, notation: erNotation, prompt: text.trim() });
-          mermaidCode = await callAI(userPrompt);
+          mermaidCode = await callAI(userPrompt, currentUserId);
         }
         break;
       }
@@ -103,8 +121,15 @@ export async function POST(req: NextRequest) {
       repaired = fixResult.repaired;
     }
 
+    // ===== 记录每日使用次数 =====
+    if (currentUserId) {
+      incrementDailyUsage(currentUserId).catch(() => {});
+    }
+
+    const detectedMode = effectiveMode === "sql" && generationMode === "ai" ? "sql" : effectiveMode;
+
     return new Response(
-      JSON.stringify({ result: mermaidCode, fromTemplate, repaired }),
+      JSON.stringify({ result: mermaidCode, fromTemplate, repaired, mode: detectedMode }),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   } catch (error: unknown) {
@@ -116,8 +141,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** 调用 AI 生成（非流式，因为后面要校验修复） */
-async function callAI(prompt: string): Promise<string> {
+/** 调用 AI 生成并记录用量 */
+async function callAI(prompt: string, userId?: string | null): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   const apiBase = process.env.OPENAI_API_BASE;
   const modelName = process.env.AI_MODEL || "deepseek-v4-flash";
@@ -138,6 +163,18 @@ async function callAI(prompt: string): Promise<string> {
     temperature: 0.1,
     max_tokens: 2048,
   });
+
+  // 记录 Token 用量
+  if (userId && res.usage) {
+    const cost = estimateCost(modelName, res.usage.prompt_tokens, res.usage.completion_tokens);
+    logUsage({
+      userId,
+      model: modelName,
+      inputTokens: res.usage.prompt_tokens,
+      outputTokens: res.usage.completion_tokens,
+      cost,
+    }).catch(() => {}); // 异步记录，不阻塞响应
+  }
 
   const result = res.choices[0]?.message?.content || "";
   return result

@@ -45,6 +45,14 @@ export default async function SharePage({
     where: { id },
   });
 
+  // 记录浏览
+  if (diagram) {
+    prisma.diagram.update({
+      where: { id: diagram.id },
+      data: { views: { increment: 1 } },
+    }).catch(() => {});
+  }
+
   if (!diagram) {
     return (
       <div className="max-w-2xl mx-auto px-4 py-24 text-center">

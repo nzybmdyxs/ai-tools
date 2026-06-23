@@ -40,6 +40,10 @@ model User {
   favorites    Favorite[]
   subscription Subscription?
 
+  // 用量追踪
+  usages     Usage[]
+  dailyUsage DailyUsage[]
+
   // NextAuth 关联
   accounts  Account[]
   sessions  Session[]
@@ -81,6 +85,12 @@ model Diagram {
   renderError String?  // 上次渲染错误信息
   repaired    Boolean  @default(false)  // 是否经过自动修复
 
+  // V2: 公开分享
+  public     Boolean  @default(false)
+  views      Int      @default(0)   // 分享页浏览数
+
+  versions   DiagramVersion[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -94,6 +104,9 @@ model Template {
   description String
   preview     String  // SVG 预览或描述
   code        String  // Mermaid 代码
+
+  views       Int      @default(0)  // 浏览次数
+  uses        Int      @default(0)  // 使用次数
 
   createdAt   DateTime @default(now())
 }
@@ -157,6 +170,52 @@ model Order {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// 图表版本历史
+model DiagramVersion {
+  id        String   @id @default(cuid())
+
+  diagramId String
+  diagram   Diagram  @relation(fields: [diagramId], references: [id], onDelete: Cascade)
+
+  result    String    // 该版本的 Mermaid 代码
+  version   Int       // 版本号
+
+  createdAt DateTime @default(now())
+
+  @@unique([diagramId, version])
+}
+
+// Token 使用日志（AI 成本追踪）
+model Usage {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  model     String    // 模型名称
+  inputTokens  Int
+  outputTokens Int
+  totalTokens  Int
+  cost      Float     // 成本（美元）
+
+  createdAt DateTime @default(now())
+}
+
+// 每日使用次数追踪
+model DailyUsage {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date      String    // YYYY-MM-DD
+  count     Int       @default(0)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, date])
 }
 
 // ========== NextAuth 所需模型 ==========
